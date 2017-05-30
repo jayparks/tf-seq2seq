@@ -1,4 +1,4 @@
 **/*.pyc
-/data
-/en-fr
 model/
+data_/
+en-fr/
