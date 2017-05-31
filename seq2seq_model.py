@@ -33,7 +33,7 @@ class Seq2SeqModel(object):
         self.num_decoder_symbols = config.num_decoder_symbols
 
         self.use_residual = config.use_residual
-        self.input_feeding = config.input_feeding
+        self.attn_input_feeding = config.attn_input_feeding
         self.use_dropout = config.use_dropout
         self.keep_prob = config.dropout_keep_prob
 
@@ -84,7 +84,7 @@ class Seq2SeqModel(object):
             decoder_end_token = tf.ones(
                 shape=[self.batch_size, 1], dtype=tf.int32) * data_utils.end_token
 
-            # decoder_inputs_train: [batch_size x max_time_steps + 1]
+            # decoder_inputs_train: [batch_size , max_time_steps + 1]
             # insert _GO symbol in front of each decoder input
             self.decoder_inputs_train = tf.concat([decoder_start_token,
                                                   self.decoder_inputs], axis=1)
@@ -92,7 +92,7 @@ class Seq2SeqModel(object):
             # decoder_inputs_length_train: [batch_size]
             self.decoder_inputs_length_train = self.decoder_inputs_length + 1
 
-            # decoder_targets_train: [batch_size x max_time_steps + 1]
+            # decoder_targets_train: [batch_size, max_time_steps + 1]
             # insert EOS symbol at the end of each decoder input
             self.decoder_targets_train = tf.concat([self.decoder_inputs,
                                                    decoder_end_token], axis=1)
@@ -133,7 +133,7 @@ class Seq2SeqModel(object):
             self.encoder_inputs_embedded = tf.nn.embedding_lookup(
                 params=self.encoder_embeddings, ids=self.encoder_inputs)
         
-            # Input projection layer for feeding inputs
+            # Input projection layer to feed embedded inputs to the cell
             input_layer = Dense(self.hidden_units, dtype=self.dtype, name='input_projection')
 
             # Embedded inputs having gone through input projection layer
@@ -171,11 +171,11 @@ class Seq2SeqModel(object):
 
             if attention_mechanism != None:
                 def attn_decoder_input_fn(inputs, attention):
-                    _input_layer = Dense(self.hidden_units, name='input_projection',
-                                         dtype=self.dtype) 
+                    if not self.attn_input_feeding:
+                        return inputs
 
-                    if not self.input_feeding:
-                        return _input_layer(inputs)
+                    _input_layer = Dense(self.hidden_units, dtype=self.dtype,
+                                         name='attn_input_feeding')
                     return _input_layer(array_ops.concat([inputs, attention], -1))
 
                 # AttentionWrapper wraps RNNCell with the corresponding attention
@@ -187,7 +187,7 @@ class Seq2SeqModel(object):
                     initial_cell_state=self.encoder_last_state[-1],
                     name='Attention_Wrapper')
 
-                # To use AttentionWrapper, the decoder initial state (=encoder last state)
+                # To use AttentionWrapper, decoder initial state (=encoder last state)
                 # should be converted into the AttentionWrapperState form
                 encoder_state_list = [state for state in self.encoder_last_state]
                 encoder_state_list[-1] = self.decoder_cell.zero_state(self.batch_size, self.dtype)
@@ -204,15 +204,18 @@ class Seq2SeqModel(object):
             self.decoder_embeddings = tf.get_variable(name='embedding',
                 shape=[self.num_decoder_symbols, self.embedding_size],
                 initializer=initializer, dtype=self.dtype)
- 
+
+            # Input projection layer to feed embedded inputs to the cell
+            input_layer = Dense(self.hidden_units, dtype=self.dtype, name='input_projection')
+
+            # Output projection layer to convert cell_outputs to logits
+            output_layer = Dense(self.num_decoder_symbols, name='output_projection')
+
             if self.mode == 'training':
                 # decoder_inputs_embedded: [batch_size x max_time_step + 1 x embedding_size]
                 self.decoder_inputs_embedded = tf.nn.embedding_lookup(
                     params=self.decoder_embeddings, ids=self.decoder_inputs_train)
                
-                # Input projection layer for feeding inputs
-                input_layer = Dense(self.hidden_units, dtype=self.dtype, name='input_projection')
-
                 # Embedded inputs having gone through input projection layer
                 self.decoder_inputs_embedded = input_layer(self.decoder_inputs_embedded)
 
@@ -231,7 +234,8 @@ class Seq2SeqModel(object):
                 max_decoder_length = tf.reduce_max(self.decoder_inputs_length_train)
 
                 # decoder_outputs_train: collections.namedtuple(rnn_outputs, sample_id)
-                # decoder_outputs_train.rnn_output: [batch_size x max_time_step + 1 x hidden_units]
+                # decoder_outputs_train.rnn_output: [batch_size x max_time_step + 1 x hidden_units] if output_time_major=False
+                #                                   [max_time_step + 1 x batch_size x hidden_units] if output_time_major=True
                 # decoder_outputs_train.sample_id: [batch_size], tf.int32
                 (self.decoder_outputs_train, self.decoder_last_state_train, 
                  self.decoder_outputs_length_train) = (seq2seq.dynamic_decode(
@@ -240,9 +244,6 @@ class Seq2SeqModel(object):
                     impute_finished=True,
                     maximum_iterations=max_decoder_length))
                  
-                # Linear layer for output_projection in decoder
-                output_layer = Dense(self.num_decoder_symbols, name='output_projection')
-
                 # More efficient to do the projection on the batch-time-concatenated tensor
                 # logits_train: [batch_size x max_time_step + 1 x num_decoder_symbols]
                 self.decoder_logits_train = output_layer(self.decoder_outputs_train.rnn_output)
@@ -272,42 +273,51 @@ class Seq2SeqModel(object):
                 start_tokens = tf.ones(self.batch_size) * data_utils.start_token
                 end_token = data_utils.end_token
 
+                def embed_and_input_proj(inputs):
+                    return input_layer(tf.nn.embedding_lookup(self.decoder_embeddings, inputs))
+                    
+
                 isGreedyDecoding = (self.beam_width == None or self.beam_width <= 1)
                 if isGreedyDecoding:
                     # Helper to feed inputs for greedy decoding: uses the argmax of the output
-                    decoding_helper = seq2seq.GreedyEmbeddingHelper(embedding=self.decoder_embeddings,
-                                                                    start_tokens=start_tokens,
-                                                                    end_token=end_token)
+                    decoding_helper = seq2seq.GreedyEmbeddingHelper(start_tokens=start_tokens,
+                                                                    end_toke=end_token,
+                                                                    embedding=embed_and_input_proj)
 
+                    # Basic decoder to perform greedy decoding
                     translate_decoder = seq2seq.BasicDecoder(cell=self.decoder_cell,
                                                              helper=decoding_helper,
                                                              initial_state=self.encoder_last_state,
                                                              output_layer=output_layer)
 
                 else:
-                    # To use BeamsearchDecoder, initial_state needs to be tiled
+                    # To use BeamSearchDecoder, initial_state needs to be tiled
+                    # encoder_last_state: [batch_size, hidden_units] -> [batch_size x beam_width, hidden_units]
                     self.encoder_last_state = seq2seq.tile_batch(
                         self.encoder_last_state, self.decoder_beam_width, name='tile_batch')
 
                     # Beamsearch is used to approximately find the most likely translation
                     translate_decoder = seq2seq.BeamSearchDecoder(cell=self.decoder_cell,
-                                                               embedding=self.decoder_embeddings,
+                                                               embedding=embed_and_input_proj,
                                                                start_tokens=start_tokens,
                                                                end_token=self.end_token,
                                                                initial_state=self.encoder_last_state,
                                                                beam_width=self.decoder_beam_width,
                                                                output_layer=output_layer,)
                 
-                # For GreedyDecoder,
+                # For GreedyDecoder, return
                 # decoder_outputs_decode: collections.namedtuple(rnn_outputs, sample_id)
-                # decoder_outputs_decode.rnn_output: [batch_size x max_time_step x num_decoder_symbols]
+                # decoder_outputs_decode.rnn_output: [batch_size, max_time_step, num_decoder_symbols] if output_time_major=False
+                #                                    [max_time_step, batch_size, num_decoder_symbols] if output_time_major=True
                 # decoder_outputs_decode.sample_id: [batch_size], tf.int32
                 
-                # For BeamSearchDecoder,
-                # decoder_outputs_decode: collections.namedtuple(predicted_ids, beam_search_decoder_output)
-                # decoder_outputs_decode.predicted_ids: [batch_size x max_time_step x beam_width]
-                # decoder_outputs_decode.beam_search_decoder_output: 
-                #   collections.namedtuple(scores, predicted_ids, parent_ids) 
+                # For BeamSearchDecoder, return
+                # decoder_outputs_decode: FinalBeamSearchDecoderOutput instance
+                #                         namedtuple(predicted_ids, beam_search_decoder_output)
+                # decoder_outputs_decode.predicted_ids: [batch_size, max_time_step, beam_width] if output_time_major=False
+                #                                       [max_time_step, batch_size, beam_width] if output_time_major=True
+                # decoder_outputs_decode.beam_search_decoder_output: BeamSearchDecoderOutput instance
+                #                                                    namedtuple(scores, predicted_ids, parent_ids)
 
                 (self.decoder_outputs_decode, self.decoder_last_state_decode,
                  self.decoder_outputs_length_decode) = (seq2seq.dynamic_decode(
@@ -316,11 +326,14 @@ class Seq2SeqModel(object):
                     impute_finished=True,
                     maximum_iterations=None))
 
-                if isGreedyDecoding: 
-                    # Use argmax to extract decoder symbols to emit
+                if isGreedyDecoding:
+                    # Use argmax to find decoder symbols to emit: [batch_size, max_time_step]
                     self.decoder_pred_decoding = tf.argmax(self.decoder_outputs_decode, axis=-1,
                                                            name='decoder_pred_decoding')
-#                else:
+                else:
+                    # Use beam search to approximately find the most likely translation
+                    # [batch_size, max_time_step, beam_width] (output_major=False)
+                    self.decoder_pred_decoding = tf.identity(self.decoder_outputs_decode)
 
 
     def init_optimizer(self):
@@ -388,15 +401,15 @@ class Seq2SeqModel(object):
             raise ValueError("training step can only be operated on training mode")
 
         input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length,
-                                      decoder_inputs, decoder_inputs_length)
+                                      decoder_inputs, decoder_inputs_length, False)
         # Input feeds for dropout
         input_feed[self.keep_prob_placeholder.name] = self.keep_prob
  
-        output_feed = [self.updates,		# Update Op that does optimization
-                       self.loss]		# Loss for this batch
+        output_feed = [self.updates,	# Update Op that does optimization
+                       self.loss]	# Loss for this batch
         
         outputs = sess.run(output_feed, input_feed)
-        return outputs[1]			# loss
+        return outputs[1]		# loss
 
 
     def eval(self, sess, encoder_inputs, encoder_inputs_length,
@@ -420,17 +433,31 @@ class Seq2SeqModel(object):
         """
         
         input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length,
-                                      decoder_inputs, decoder_inputs_length)
+                                      decoder_inputs, decoder_inputs_length, False)
         # Input feeds for dropout
         input_feed[self.keep_prob_placeholder.name] = 1.0
 
         output_feed = [self.loss]
         outputs = sess.run(output_feed, input_feed)
-        return outputs[0]			# loss
+        return outputs[0]	# loss
+
+
+    def predict(self, sess, encoder_inputs, encoder_inputs_length):
+        
+        input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length, decode=True)
+
+        # Input feeds for dropout
+        input_feed[self.keep_prob_placeholder.name] = 1.0
+ 
+        output_feed = [self.decoder_pred_decoding]
+        outputs = sess.run(output_feed, input_feed)
+
+				# GreedyDecoder: [batch_size, max_time_step]
+        return outputs[0]	# BeamSearchDecoder: [batch_size, max_time_step, beam_width]
 
 
     def check_feeds(self, encoder_inputs, encoder_inputs_length, 
-                    decoder_inputs, decoder_inputs_length):
+                    decoder_inputs, decoder_inputs_length, decode):
         """
         Args:
           encoder_inputs: a numpy int matrix of [batch_size x max_source_time_steps]
@@ -441,33 +468,34 @@ class Seq2SeqModel(object):
               to feed as decoder inputs
           decoder_inputs_length: a numpy int vector of [batch_size]
               to feed as sequence lengths for each element in the given batch
-    
+          decode: a scalar boolean that indicates decode mode
         Returns:
           A feed for the model that consists of encoder_inputs, encoder_inputs_length,
           decoder_inputs, decoder_inputs_length
         """ 
 
         input_batch_size = encoder_inputs.shape[0]
-        target_batch_size = decoder_inputs.shape[0]
-
         if input_batch_size != encoder_inputs_length.shape[0]:
             raise ValueError("Encoder inputs and their lengths must be equal in their "
                 "batch_size, %d != %d" % (input_batch_size, encoder_inputs_length.shape[0]))
-        if target_batch_size != decoder_inputs_length.shape[0]:
-            raise ValueError("Decoder targets and their lengths must be equal in their "
-                "batch_size, %d != %d" % (target_batch_size, decoder_inputs_length.shape[0]))
-        if input_batch_size != target_batch_size:
-            raise ValueError("Encoder inputs and Decoder inputs must be equal in their "
-                "batch_size, %d != %d" % (input_batch_size, target_batch_size))
+
+        if not decode:
+            target_batch_size = decoder_inputs.shape[0]
+            if target_batch_size != input_batch_size:
+                raise ValueError("Encoder inputs and Decoder inputs must be equal in their "
+                    "batch_size, %d != %d" % (input_batch_size, target_batch_size))
+            if target_batch_size != decoder_inputs_length.shape[0]:
+                raise ValueError("Decoder targets and their lengths must be equal in their "
+                    "batch_size, %d != %d" % (target_batch_size, decoder_inputs_length.shape[0]))
 
         input_feed = {}
     
         input_feed[self.encoder_inputs.name] = encoder_inputs
         input_feed[self.encoder_inputs_length.name] = encoder_inputs_length
-        input_feed[self.decoder_inputs.name] = decoder_inputs
-        input_feed[self.decoder_inputs_length.name] = decoder_inputs_length
+
+        if not decode:
+            input_feed[self.decoder_inputs.name] = decoder_inputs
+            input_feed[self.decoder_inputs_length.name] = decoder_inputs_length
 
         return input_feed 
 
-
-#    def translate(self, sess, encoder_inputs, encoder_inputs_length):
