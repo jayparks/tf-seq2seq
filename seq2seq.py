@@ -1,4 +1,5 @@
 
+#!/usr/bin/env python
 # coding: utf-8
 
 import os
@@ -134,7 +135,7 @@ def train():
         print 'Training..'
         for epoch_idx in xrange(FLAGS.max_epochs):
             if model.global_epoch_step.eval() >= FLAGS.max_epochs:
-                print 'Training is already complete.'
+                print 'Training is already complete.', \
                       'current epoch:{}, max epoch:{}'.format(model.global_epoch_step.eval(), FLAGS.max_epochs)
                 break
 
@@ -164,8 +165,8 @@ def train():
                     words_per_sec = words_seen / time_elapsed
                     sents_per_sec = sents_seen / time_elapsed
 
-                    print 'Epoch ', model.global_epoch_step.eval(), 'Step ', model.global_step.eval(),
-                          'Perplexity {0:.2f}'.format(avg_perplexity), 'Step-time ', step_time,
+                    print 'Epoch ', model.global_epoch_step.eval(), 'Step ', model.global_step.eval(), \
+                          'Perplexity {0:.2f}'.format(avg_perplexity), 'Step-time ', step_time, \
                           '{0:.2f} sents/s'.format(sents_per_sec), '{0:.2f} words/s'.format(words_per_sec)
 
                     loss = 0

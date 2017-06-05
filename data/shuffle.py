@@ -5,7 +5,10 @@ import random
 import tempfile
 from subprocess import call
 
-
+'''
+This code comes from shuffle.py of
+nematus proejct (https://github.com/rsennrich/nematus)
+'''
 
 def main(files, temporary=False):
 

@@ -1,6 +1,10 @@
 import sys
 import re
 
+'''
+This code comes from strip_sgml.py of
+nematus proejct (https://github.com/rsennrich/nematus)
+'''
 
 def main():
     fin = sys.stdin
