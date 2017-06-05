@@ -36,7 +36,7 @@ tf.app.flags.DEFINE_string('target_valid_data', 'data/fr_mix_de_mix/newstest2012
 
 # Network parameters
 tf.app.flags.DEFINE_string('cell_type', 'lstm', 'RNN cell to use for encoder and decoder')
-tf.app.flags.DEFINE_string('attention_type', 'luong', 'Attention mechanism: (bahdanau, luong), default: bahdanau')
+tf.app.flags.DEFINE_string('attention_type', 'bahdanau', 'Attention mechanism: (bahdanau, luong), default: bahdanau')
 tf.app.flags.DEFINE_integer('hidden_units', 1024, 'Number of hidden units for each layer in the model')
 tf.app.flags.DEFINE_integer('depth', 2, 'Number of layers for each encoder and decoder')
 tf.app.flags.DEFINE_integer('embedding_size', 500, 'Embedding dimensions of encoder and decoder inputs')
@@ -44,14 +44,14 @@ tf.app.flags.DEFINE_integer('num_encoder_symbols', 30000, 'Source vocabulary siz
 tf.app.flags.DEFINE_integer('num_decoder_symbols', 30000, 'Target vocabulary size')
 
 tf.app.flags.DEFINE_boolean('use_residual', True, 'Use residual connection between layers')
-tf.app.flags.DEFINE_boolean('attn_input_feeding', False, 'Use input feeding method in attentional decoder')
+tf.app.flags.DEFINE_boolean('attn_input_feeding', True, 'Use input feeding method in attentional decoder')
 tf.app.flags.DEFINE_boolean('use_dropout', True, 'Use dropout in each rnn cell')
 tf.app.flags.DEFINE_float('dropout_rate', 0.3, 'Dropout probability for input/output/state units (0.0: no dropout)')
 
 # Training parameters
 tf.app.flags.DEFINE_float('learning_rate', 0.0002, 'Learning rate')
 tf.app.flags.DEFINE_float('max_gradient_norm', 1.0, 'Clip gradients to this norm')
-tf.app.flags.DEFINE_integer('batch_size', 100, 'Batch size')
+tf.app.flags.DEFINE_integer('batch_size', 1, 'Batch size')
 tf.app.flags.DEFINE_integer('max_epochs', 30, 'Maximum # of training epochs')
 tf.app.flags.DEFINE_integer('max_load_batches', 20, 'Maximum # of batches to load at one time')
 tf.app.flags.DEFINE_integer('max_seq_length', 50, 'Maximum sequence length')
@@ -67,9 +67,8 @@ tf.app.flags.DEFINE_boolean('sort_by_length', True, 'Sort pre-fetched minibatche
 
 # Decoding parameters
 tf.app.flags.DEFINE_boolean('decode', True, 'Use decode mode')
-tf.app.flags.DEFINE_integer('beam_width', 5, 'Beam width used in beamsearch')
-#tf.app.flags.DEFINE_integer('max_encode_step'), None
-tf.app.flags.DEFINE_integer('max_decode_step', 300, 'Maximum time step limit to decode')
+tf.app.flags.DEFINE_integer('beam_width', 1, 'Beam width used in beamsearch')
+tf.app.flags.DEFINE_integer('max_decode_step', 500, 'Maximum time step limit to decode')
 tf.app.flags.DEFINE_boolean('write_n_best', True, 'Write n-best list (n=beam_width)')
 tf.app.flags.DEFINE_string('decode_input', 'data/fr_mix_de_mix/newstest2012.bpe.de', 'File path to be decoded')
 tf.app.flags.DEFINE_string('decode_output', 'data/fr_mix_de_mix/newstest2012.bpe.de.trans', 'File path to decoded output')
@@ -257,8 +256,8 @@ def decode():
                     if not FLAGS.write_n_best:
                         break
                             
-                if idx % 100 == 0:
-                    print '  {}th line decoded'.format(idx)
+                if idx % 10 == 0:
+                    print '  {}th batch decoded'.format(idx)
             print 'Decoding terminated'
         except IOError:
             pass
@@ -266,7 +265,7 @@ def decode():
             [f.close() for f in fout]
 
 
-# In[ ]:
+# In[7]:
 
 def main(_):
     if FLAGS.decode:
@@ -275,7 +274,7 @@ def main(_):
         train()
 
 
-# In[ ]:
+# In[8]:
 
 if __name__ == '__main__':
     tf.app.run()
