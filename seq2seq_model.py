@@ -286,7 +286,7 @@ class Seq2SeqModel(object):
 
                     # Here, we use expand_dims to be compatible with the result of the beamsearch decoder
                     # decoder_pred_decode: [batch_size, max_time_step, 1] (output_major=False)
-                    self.decoder_pred_decode = tf.expand_dims(self.decoder_outputs_decode.sample_id, 1)
+                    self.decoder_pred_decode = tf.expand_dims(self.decoder_outputs_decode.sample_id, -1)
 
                 else:
                     # Use beam search to approximately find the most likely translation
@@ -380,11 +380,6 @@ class Seq2SeqModel(object):
                      else self.batch_size
         initial_state = [state for state in encoder_last_state]
 
-        print("decoder_cell_zero_state")
-        print(self.decoder_cell_list[-1].zero_state(batch_size, self.dtype))
-
-        print("decoder_cell.state_size")
-        print(self.decoder_cell_list[-1].state_size)
         initial_state[-1] = self.decoder_cell_list[-1].zero_state(
           batch_size=batch_size, dtype=self.dtype)
         decoder_initial_state = tuple(initial_state)

@@ -311,7 +311,6 @@ class BeamSearchDecoder(decoder.Decoder):
         `[batch_size, beam_width, s]` (assuming batch_size and beam_width
         are known statically).
     """
-    print s
     if isinstance(s, ops.Tensor):
       s = tensor_util.constant_value_as_shape(s)
     else:
@@ -360,8 +359,6 @@ class BeamSearchDecoder(decoder.Decoder):
       raise ValueError(
           "Expected tensor (%s) to have known rank, but ndims == None." % t)
     if t.shape.ndims >= 1:
-      print t
-      print s
       return self._split_batch_beams(t, s)
     else:
       return t

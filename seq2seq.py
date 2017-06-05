@@ -67,7 +67,7 @@ tf.app.flags.DEFINE_boolean('sort_by_length', True, 'Sort pre-fetched minibatche
 
 # Decoding parameters
 tf.app.flags.DEFINE_boolean('decode', True, 'Use decode mode')
-tf.app.flags.DEFINE_integer('beam_width', 2, 'Beam width used in beamsearch')
+tf.app.flags.DEFINE_integer('beam_width', 5, 'Beam width used in beamsearch')
 #tf.app.flags.DEFINE_integer('max_encode_step'), None
 tf.app.flags.DEFINE_integer('max_decode_step', 300, 'Maximum time step limit to decode')
 tf.app.flags.DEFINE_boolean('write_n_best', True, 'Write n-best list (n=beam_width)')
@@ -240,12 +240,13 @@ def decode():
             print 'Decoding..'
             if FLAGS.write_n_best:
                 fout = [data_utils.fopen(("%s_%d" % (FLAGS.decode_output, k)), 'w')                         for k in range(FLAGS.beam_width)]
-            fout = [data_utils.fopen(FLAGS.decode_output, 'w')]
+            else:
+                fout = [data_utils.fopen(FLAGS.decode_output, 'w')]
+            
             for idx, source_seq in enumerate(test_set):
                 source, source_len = prepare_batch(source_seq)
-                
                 # predicted_ids: GreedyDecoder; [batch_size, max_time_step, 1]
-                #                BeamSearchDecoder; [batch_size, max_time_step, beam_width]
+                # BeamSearchDecoder; [batch_size, max_time_step, beam_width]
                 predicted_ids = model.predict(sess, encoder_inputs=source, 
                                               encoder_inputs_length=source_len)
                    
