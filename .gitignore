@@ -1,6 +1,7 @@
 **/*.pyc
 **/*.swp
 model/
+models/
 data_/
 fr_mix_de_mix/
 en-de/
