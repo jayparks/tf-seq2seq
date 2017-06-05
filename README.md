@@ -16,7 +16,6 @@ The package was largely implemented by using the latest (1.2.rc1) tf.contrib.seq
 - Attention and input_feeding
 - Beamsearch decoding 
 - Write n-best list
-- **As of 1.2.rc1, the BeamSearchDecoder API works but does not produce correct outputs**
 
 # Dependencies
 - NumPy >= 1.11.1
@@ -117,7 +116,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 
 
 ## History
-- June 5, 2017: Major update. Resolved incompatibility issue between BeamSearchDecoder and AttentionWrapper with no predefined input time steps.
+- June 5, 2017: Major update
 
 
 ## Acknowledgements
