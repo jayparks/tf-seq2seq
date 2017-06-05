@@ -88,7 +88,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--dropout_rate</code> : Dropout probability for cell outputs (0.0: no dropout) (default: 0.3)
 
 **Training params**
-- <code>--learning_rate</code> : Number of hidden units for each layer in the model (default: 1024)
+- <code>--learning_rate</code> : Number of hidden units for each layer in the model (default: 0.0002)
 - <code>--max_gradient_norm</code> : Clip gradients to this norm (default 1.0)
 - <code>--batch_size</code> : Batch size
 - <code>--max_epochs</code> : Maximum training epochs
@@ -97,21 +97,19 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--display_freq</code> : Display training status every this iteration
 - <code>--save_freq</code> : Save model checkpoint every this iteration
 - <code>--valid_freq</code> : Evaluate the model every this iteration: valid_data needed
-- <code>--optimizer</code> : Optimizer for training: (adadelta, adam, rmsprop)
+- <code>--optimizer</code> : Optimizer for training: (adadelta, adam, rmsprop) (default: adam)
 - <code>--model_dir</code> : Path to save model checkpoints
 - <code>--model_name</code> : File name used for model checkpoints
-- <code>--shuffle_each_epoch</code> : Shuffle training dataset for each epoch
-- <code>--sort_by_length</code> : Sort pre-fetched minibatches by their target sequence lengths
+- <code>--shuffle_each_epoch</code> : Shuffle training dataset for each epoch (default: True)
+- <code>--sort_by_length</code> : Sort pre-fetched minibatches by their target sequence lengths (default: True)
 
 **Decoding params**
 - <code>--decode</code> : Use decode mode
-- <code>--beam_width</code> : Beam width used in beamsearch
-- <code>--max_decode_step</code> : Maximum time-step limit to decode
+- <code>--beam_width</code> : Beam width used in beamsearch (default: 1)
+- <code>--max_decode_step</code> : Maximum time-step limit to decode (default: 500)
 - <code>--write_n_best</code> : Write beamsearch n-best list (n=beam_width)
-- <code>--decode_input</code> : File path to be decoded
-- <code>--decode_output</code> : File path to decoded output
-- <code>--max_epochs</code> : Number of hidden units for each layer in the model
-- <code>--max_epochs</code> : Number of hidden units for each layer in the model
+- <code>--decode_input</code> : Input file path to decode
+- <code>--decode_output</code> : Output file path of decoding output
 
 **Runtime params**
 - <code>--allow_soft_placement</code> : Allow device soft placement
