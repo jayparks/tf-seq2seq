@@ -1,8 +1,6 @@
 
 # coding: utf-8
 
-# In[1]:
-
 import os
 import math
 import time
@@ -10,9 +8,6 @@ import random
 import numpy as np
 
 import tensorflow as tf
-
-
-# In[2]:
 
 from data.data_iterator import TextIterator
 from data.data_iterator import BiTextIterator
@@ -24,21 +19,19 @@ from data.data_utils import prepare_train_batch
 from seq2seq_model import Seq2SeqModel
 
 
-# In[3]:
-
 # Data loading parameters
-tf.app.flags.DEFINE_string('source_vocabulary', 'data/fr_mix_de_mix/europarl-v7.1.4M.de.json', 'Path to source vocabulary')
-tf.app.flags.DEFINE_string('target_vocabulary', 'data/fr_mix_de_mix/europarl-v7.1.4M.fr.json', 'Path to target vocabulary')
-tf.app.flags.DEFINE_string('source_train_data', 'data/fr_mix_de_mix/newstest2012.bpe.de', 'Path to source training data')
-tf.app.flags.DEFINE_string('target_train_data', 'data/fr_mix_de_mix/newstest2012.bpe.fr', 'Path to target training data')
-tf.app.flags.DEFINE_string('source_valid_data', 'data/fr_mix_de_mix/newstest2012.bpe.de', 'Path to source validation data')
-tf.app.flags.DEFINE_string('target_valid_data', 'data/fr_mix_de_mix/newstest2012.bpe.fr', 'Path to target validation data')
+tf.app.flags.DEFINE_string('source_vocabulary', 'data/europarl-v7.1.4M.de.json', 'Path to source vocabulary')
+tf.app.flags.DEFINE_string('target_vocabulary', 'data/europarl-v7.1.4M.fr.json', 'Path to target vocabulary')
+tf.app.flags.DEFINE_string('source_train_data', 'data/newstest2012.bpe.de', 'Path to source training data')
+tf.app.flags.DEFINE_string('target_train_data', 'data/newstest2012.bpe.fr', 'Path to target training data')
+tf.app.flags.DEFINE_string('source_valid_data', 'data/newstest2012.bpe.de', 'Path to source validation data')
+tf.app.flags.DEFINE_string('target_valid_data', 'data/newstest2012.bpe.fr', 'Path to target validation data')
 
 # Network parameters
-tf.app.flags.DEFINE_string('cell_type', 'lstm', 'RNN cell to use for encoder and decoder')
+tf.app.flags.DEFINE_string('cell_type', 'lstm', 'RNN cell for encoder and decoder, default: lstm')
 tf.app.flags.DEFINE_string('attention_type', 'bahdanau', 'Attention mechanism: (bahdanau, luong), default: bahdanau')
-tf.app.flags.DEFINE_integer('hidden_units', 1024, 'Number of hidden units for each layer in the model')
-tf.app.flags.DEFINE_integer('depth', 2, 'Number of layers for each encoder and decoder')
+tf.app.flags.DEFINE_integer('hidden_units', 1024, 'Number of hidden units in each layer')
+tf.app.flags.DEFINE_integer('depth', 2, 'Number of layers in each encoder and decoder')
 tf.app.flags.DEFINE_integer('embedding_size', 500, 'Embedding dimensions of encoder and decoder inputs')
 tf.app.flags.DEFINE_integer('num_encoder_symbols', 30000, 'Source vocabulary size')
 tf.app.flags.DEFINE_integer('num_decoder_symbols', 30000, 'Target vocabulary size')
@@ -56,8 +49,8 @@ tf.app.flags.DEFINE_integer('max_epochs', 10, 'Maximum # of training epochs')
 tf.app.flags.DEFINE_integer('max_load_batches', 20, 'Maximum # of batches to load at one time')
 tf.app.flags.DEFINE_integer('max_seq_length', 50, 'Maximum sequence length')
 tf.app.flags.DEFINE_integer('display_freq', 100, 'Display training status every this iteration')
-tf.app.flags.DEFINE_integer('save_freq', 100, 'Save model checkpoint every this iteration')
-tf.app.flags.DEFINE_integer('valid_freq', 1000, 'Evaluate model every this iteration: valid_data needed')
+tf.app.flags.DEFINE_integer('save_freq', 500, 'Save model checkpoint every this iteration')
+tf.app.flags.DEFINE_integer('valid_freq', 500, 'Evaluate model every this iteration: valid_data needed')
 tf.app.flags.DEFINE_string('optimizer', 'adam', 'Optimizer for training: (adadelta, adam, rmsprop)')
 tf.app.flags.DEFINE_string('model_dir', 'model/', 'Path to save model checkpoints')
 tf.app.flags.DEFINE_string('summary_dir', 'model/summary', 'Path to save model summary')
@@ -67,11 +60,11 @@ tf.app.flags.DEFINE_boolean('sort_by_length', True, 'Sort pre-fetched minibatche
 
 # Decoding parameters
 tf.app.flags.DEFINE_boolean('decode', False, 'Use decode mode')
-tf.app.flags.DEFINE_integer('beam_width', 1, 'Beam width used in beamsearch')
+tf.app.flags.DEFINE_integer('beam_width', 5, 'Beam width used in beamsearch')
 tf.app.flags.DEFINE_integer('max_decode_step', 500, 'Maximum time step limit to decode')
 tf.app.flags.DEFINE_boolean('write_n_best', False, 'Write n-best list (n=beam_width)')
-tf.app.flags.DEFINE_string('decode_input', 'data/fr_mix_de_mix/newstest2012.bpe.de', 'File path to be decoded')
-tf.app.flags.DEFINE_string('decode_output', 'data/fr_mix_de_mix/newstest2012.bpe.de.trans', 'File path to decoded output')
+tf.app.flags.DEFINE_string('decode_input', 'data/newstest2012.bpe.de', 'Decoding input path')
+tf.app.flags.DEFINE_string('decode_output', 'data/newstest2012.bpe.de.trans', 'Decoding output path')
 
 # Runtime parameters
 tf.app.flags.DEFINE_boolean('use_fp16', False, 'Use half precision float16 instead of float32 as dtype')
@@ -80,8 +73,6 @@ tf.app.flags.DEFINE_boolean('log_device_placement', False, 'Log placement of ops
 
 FLAGS = tf.app.flags.FLAGS
 
-
-# In[4]:
 
 def create_model(session, FLAGS):
     run_mode = 'decode' if FLAGS.decode else 'train'
@@ -99,9 +90,6 @@ def create_model(session, FLAGS):
         session.run(tf.global_variables_initializer())
         
     return model
-
-
-# In[5]:
 
 def train():
     # Load parallel data to train
@@ -146,7 +134,8 @@ def train():
         print 'Training..'
         for epoch_idx in xrange(FLAGS.max_epochs):
             if model.global_epoch_step.eval() >= FLAGS.max_epochs:
-                print 'Training is already complete.'                       'current epoch:{}, max epoch:{}'.format(model.global_epoch_step.eval(), FLAGS.max_epochs)
+                print 'Training is already complete.'
+                      'current epoch:{}, max epoch:{}'.format(model.global_epoch_step.eval(), FLAGS.max_epochs)
                 break
 
             for source_seq, target_seq in train_set:    
@@ -175,7 +164,9 @@ def train():
                     words_per_sec = words_seen / time_elapsed
                     sents_per_sec = sents_seen / time_elapsed
 
-                    print 'Epoch ', model.global_epoch_step.eval(), 'Step ', model.global_step.eval(),                           'Perplexity {0:.2f}'.format(avg_perplexity), 'Step-time ', step_time,                           '{0:.2f} sents/s'.format(sents_per_sec), '{0:.2f} words/s'.format(words_per_sec)
+                    print 'Epoch ', model.global_epoch_step.eval(), 'Step ', model.global_step.eval(),
+                          'Perplexity {0:.2f}'.format(avg_perplexity), 'Step-time ', step_time,
+                          '{0:.2f} sents/s'.format(sents_per_sec), '{0:.2f} words/s'.format(words_per_sec)
 
                     loss = 0
                     words_seen = 0
@@ -212,10 +203,13 @@ def train():
             # Increase the epoch index of the model
             model.global_epoch_step_op.eval()
             print 'Epoch {0:} DONE'.format(model.global_epoch_step.eval())
+        
+        print 'Saving the last model..'
+        checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.model_name)
+        model.save(sess, checkpoint_path, global_step=model.global_step)
+        
     print 'Training Terminated'
 
-
-# In[6]:
 
 def decode():
     # Load source data to decode
@@ -234,11 +228,11 @@ def decode():
 
         # Reload existing checkpoint
         model = create_model(sess, FLAGS)
-        fout = []
         try:
-            print 'Decoding..'
+            print 'Decoding {}..'.format(FLAGS.decode_input)
             if FLAGS.write_n_best:
-                fout = [data_utils.fopen(("%s_%d" % (FLAGS.decode_output, k)), 'w')                         for k in range(FLAGS.beam_width)]
+                fout = [data_utils.fopen(("%s_%d" % (FLAGS.decode_output, k)), 'w') \
+                        for k in range(FLAGS.beam_width)]
             else:
                 fout = [data_utils.fopen(FLAGS.decode_output, 'w')]
             
@@ -249,23 +243,20 @@ def decode():
                 predicted_ids = model.predict(sess, encoder_inputs=source, 
                                               encoder_inputs_length=source_len)
                    
-                # write decoding results
+                # Write decoding results
                 for k, f in reversed(list(enumerate(fout))):
                     for seq in predicted_ids:
                         f.write(str(data_utils.seq2words(seq[:,k], target_inverse_dict)) + '\n')
                     if not FLAGS.write_n_best:
                         break
-                            
-                if idx % 10 == 0:
-                    print '  {}th batch decoded'.format(idx)
+                print '  {}th line decoded'.format(idx * FLAGS.batch_size)
+                
             print 'Decoding terminated'
         except IOError:
             pass
         finally:
             [f.close() for f in fout]
 
-
-# In[7]:
 
 def main(_):
     if FLAGS.decode:
@@ -274,8 +265,5 @@ def main(_):
         train()
 
 
-# In[8]:
-
 if __name__ == '__main__':
     tf.app.run()
-

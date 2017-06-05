@@ -14,6 +14,7 @@ from tensorflow.contrib.rnn import DropoutWrapper, ResidualWrapper
 
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.layers.core import Dense
 from tensorflow.python.util import nest
@@ -29,13 +30,18 @@ class Seq2SeqModel(object):
 
         assert mode.lower() in ['train', 'decode']
 
+        self.mode = mode.lower()
+
         self.cell_type = config.cell_type 
         self.hidden_units = config.hidden_units
         self.depth = config.depth
         self.attention_type = config.attention_type
         self.embedding_size = config.embedding_size
 #        self.bidirectional = config.bidirectional
-        self.batch_size = config.batch_size
+       
+        # currently we support batch_size=1 for decoding 
+        self.batch_size = 1 if self.mode =='decode' \
+                          else config.batch_size
         self.num_encoder_symbols = config.num_encoder_symbols
         self.num_decoder_symbols = config.num_decoder_symbols
 
@@ -52,7 +58,6 @@ class Seq2SeqModel(object):
         self.global_epoch_step_op = \
 	    tf.assign(self.global_epoch_step, self.global_epoch_step+1)
         
-        self.mode = mode.lower()
         self.beam_width = config.beam_width
         self.use_beamsearch_decode = False
         if self.mode == 'decode' and self.beam_width > 1:
@@ -81,9 +86,10 @@ class Seq2SeqModel(object):
         self.encoder_inputs_length = tf.placeholder(
             dtype=tf.int32, shape=(None,), name='encoder_inputs_length')
 
+        self.batch_size = tf.shape(self.encoder_inputs)[0]
         if self.mode == 'train':
             # In training mode, get dynamic_batch_size
-            self.batch_size = tf.shape(self.encoder_inputs)[0]
+       #     self.batch_size = tf.shape(self.encoder_inputs)[0]
 
             # decoder_inputs: [batch_size, max_time_steps]
             self.decoder_inputs = tf.placeholder(
@@ -227,8 +233,9 @@ class Seq2SeqModel(object):
             elif self.mode == 'decode':
         
                 # Start_tokens: [batch_size,] `int32` vector
-                start_tokens = self.batch_size * [data_utils.start_token]
-#                start_tokens = tf.ones([self.batch_size,], dtype=tf.int32) * data_utils.start_token
+                start_tokens = tf.ones([self.batch_size,], tf.int32) * data_utils.start_token
+#                batch_size_tensor = constant_op.constant(self.batch_size)
+#                start_tokens = array_ops.fill([batch_size_tensor], data_utils.start_token)
                 end_token = data_utils.end_token
 
                 def embed_and_input_proj(inputs):
@@ -256,7 +263,7 @@ class Seq2SeqModel(object):
                                                                beam_width=self.beam_width,
                                                                output_layer=output_layer,)
                 # For GreedyDecoder, return
-                # decoder_outputs_decode: BasicDecoderOutput
+                # decoder_outputs_decode: BasicDecoderOutput instance
                 #                         namedtuple(rnn_outputs, sample_id)
                 # decoder_outputs_decode.rnn_output: [batch_size, max_time_step, num_decoder_symbols] 	if output_time_major=False
                 #                                    [max_time_step, batch_size, num_decoder_symbols] 	if output_time_major=True
@@ -280,9 +287,9 @@ class Seq2SeqModel(object):
 
                 if not self.use_beamsearch_decode:
                     # decoder_outputs_decode.sample_id: [batch_size, max_time_step]
-                    # Or use argmax to find decoder symbols to emit: [batch_size, max_time_step]
+                    # Or use argmax to find decoder symbols to emit:
                     # self.decoder_pred_decode = tf.argmax(self.decoder_outputs_decode.rnn_output,
-                    #                                        axis=-1, name='decoder_pred_decode')
+                    #                                      axis=-1, name='decoder_pred_decode')
 
                     # Here, we use expand_dims to be compatible with the result of the beamsearch decoder
                     # decoder_pred_decode: [batch_size, max_time_step, 1] (output_major=False)
@@ -496,7 +503,8 @@ class Seq2SeqModel(object):
     def predict(self, sess, encoder_inputs, encoder_inputs_length):
         
         input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length, 
-                                      None, None, decode=True)
+                                      decoder_inputs=None, decoder_inputs_length=None, 
+                                      decode=True)
 
         # Input feeds for dropout
         input_feed[self.keep_prob_placeholder.name] = 1.0
