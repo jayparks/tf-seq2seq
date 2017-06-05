@@ -106,7 +106,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 **Decoding params**
 - <code>--decode</code> : Use decode mode
 - <code>--beam_width</code> : Beam width used in beamsearch (default: 1)
-- <code>--max_decode_step</code> : Maximum time-step limit to decode (default: 500)
+- <code>--max_decode_step</code> : Maximum time step limit in decoding (default: 500)
 - <code>--write_n_best</code> : Write beamsearch n-best list (n=beam_width)
 - <code>--decode_input</code> : Input file path to decode
 - <code>--decode_output</code> : Output file path of decoding output
