@@ -31,7 +31,7 @@ cd data/
 ./preprocess.sh src trg sample_data ${max_seq_len}
 ```
 
-Running above code performs widely used preprocessing steps for Machine Translation (MT).
+Running the above code performs widely used preprocessing steps for Machine Translation (MT).
 
 - Normalizing punctuation
 - Tokenizing
