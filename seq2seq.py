@@ -66,7 +66,7 @@ tf.app.flags.DEFINE_boolean('shuffle_each_epoch', True, 'Shuffle training datase
 tf.app.flags.DEFINE_boolean('sort_by_length', True, 'Sort pre-fetched minibatches by their target sequence lengths')
 
 # Decoding parameters
-tf.app.flags.DEFINE_boolean('decode', True, 'Use decode mode')
+tf.app.flags.DEFINE_boolean('decode', False, 'Use decode mode')
 tf.app.flags.DEFINE_integer('beam_width', 1, 'Beam width used in beamsearch')
 tf.app.flags.DEFINE_integer('max_decode_step', 500, 'Maximum time step limit to decode')
 tf.app.flags.DEFINE_boolean('write_n_best', False, 'Write n-best list (n=beam_width)')
