@@ -127,7 +127,6 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 The implementation is based on the projects:
 - [nematus](https://github.com/rsennrich/nematus/): Theano implementation of Neural Machine Translation
 - [tf.seq2seq_legacy](https://github.com/tensorflow/models/tree/master/tutorials/rnn/translate) Legacy Tensorflow seq2seq tutorial
-- [tf_tutorial_plus](https://github.com/j-min/tf_tutorial_plus): Nice tutorials for tf.contrib.seq2seq API (https://github.com/j-min/tf_tutorial_plus)
-
+- [tf_tutorial_plus](https://github.com/j-min/tf_tutorial_plus): Nice tutorials for tf.contrib.seq2seq API
 
 For any comments and feedbacks, please email me at pjh0308@gmail.com or open an issue here.
