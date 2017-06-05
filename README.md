@@ -10,7 +10,7 @@ The package was largely implemented by using the latest (1.2.rc1) tf.contrib.seq
 - BeamSearchDecoder
 
 **The package supports**
-- Multi-layer
+- Multi-layer GRU/LSTM
 - Residual connection
 - Dropout
 - Attention and input_feeding
