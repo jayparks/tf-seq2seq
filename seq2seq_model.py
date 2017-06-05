@@ -1,27 +1,33 @@
+
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import math
 
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.seq2seq as seq2seq
-from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell, MultiRNNCell
+
+from tensorflow.contrib.rnn import GRUCell
+from tensorflow.contrib.rnn import LSTMCell
+from tensorflow.contrib.rnn import MultiRNNCell
 from tensorflow.contrib.rnn import DropoutWrapper, ResidualWrapper
 
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.framework import dtypes
 from tensorflow.python.layers.core import Dense
-from tensorflow.python.ops import rnn_cell_impl
+from tensorflow.python.util import nest
+
+import attention_wrapper
+import beam_search_decoder
 
 import data.data_utils as data_utils
 
-from tensorflow.python.ops.rnn_cell_impl import _zero_state_tensors
-
 class Seq2SeqModel(object):
 
-    def __init__(self, config, mode='training'):
+    def __init__(self, config, mode):
 
-        assert mode.lower() in ['training', 'decoding']
+        assert mode.lower() in ['train', 'decode']
 
         self.cell_type = config.cell_type 
         self.hidden_units = config.hidden_units
@@ -29,13 +35,14 @@ class Seq2SeqModel(object):
         self.attention_type = config.attention_type
         self.embedding_size = config.embedding_size
 #        self.bidirectional = config.bidirectional
+        self.batch_size = config.batch_size
         self.num_encoder_symbols = config.num_encoder_symbols
         self.num_decoder_symbols = config.num_decoder_symbols
 
         self.use_residual = config.use_residual
         self.attn_input_feeding = config.attn_input_feeding
         self.use_dropout = config.use_dropout
-        self.keep_prob = config.dropout_keep_prob
+        self.keep_prob = 1.0 - config.dropout_rate
 
         self.optimizer = config.optimizer
         self.learning_rate = config.learning_rate
@@ -46,8 +53,12 @@ class Seq2SeqModel(object):
 	    tf.assign(self.global_epoch_step, self.global_epoch_step+1)
         
         self.mode = mode.lower()
-        if self.mode == 'decoding':
-            self.decode_beam_width = config.decode_beam_width
+        self.beam_width = config.beam_width
+        self.use_beamsearch_decode = False
+        if self.mode == 'decode' and self.beam_width > 1:
+            self.use_beamsearch_decode = True
+        self.max_decode_step = config.max_decode_step
+        
         self.dtype = tf.float16 if config.use_fp16 else tf.float32
         self.keep_prob_placeholder = tf.placeholder(self.dtype, shape=[], name='keep_prob')
 
@@ -62,17 +73,19 @@ class Seq2SeqModel(object):
 
 
     def init_placeholders(self):       
-        # encoder_inputs: [batch_size x max_time_steps]
-        self.encoder_inputs = tf.placeholder(
-            dtype=tf.int32, shape=(None, None), name='encoder_inputs')
+        # encoder_inputs: [batch_size, max_time_steps]
+        self.encoder_inputs = tf.placeholder(dtype=tf.int32,
+            shape=(None, None), name='encoder_inputs')
+
         # encoder_inputs_length: [batch_size]
         self.encoder_inputs_length = tf.placeholder(
             dtype=tf.int32, shape=(None,), name='encoder_inputs_length')
 
-        # get dynamic batch_size
-        self.batch_size = tf.shape(self.encoder_inputs)[0]
-        if self.mode == 'training':
-            # decoder_inputs: [batch_size x max_time_steps]
+        if self.mode == 'train':
+            # In training mode, get dynamic_batch_size
+            self.batch_size = tf.shape(self.encoder_inputs)[0]
+
+            # decoder_inputs: [batch_size, max_time_steps]
             self.decoder_inputs = tf.placeholder(
                 dtype=tf.int32, shape=(None, None), name='decoder_inputs')
             # decoder_inputs_length: [batch_size]
@@ -82,7 +95,7 @@ class Seq2SeqModel(object):
             decoder_start_token = tf.ones(
                 shape=[self.batch_size, 1], dtype=tf.int32) * data_utils.start_token
             decoder_end_token = tf.ones(
-                shape=[self.batch_size, 1], dtype=tf.int32) * data_utils.end_token
+                shape=[self.batch_size, 1], dtype=tf.int32) * data_utils.end_token            
 
             # decoder_inputs_train: [batch_size , max_time_steps + 1]
             # insert _GO symbol in front of each decoder input
@@ -98,28 +111,11 @@ class Seq2SeqModel(object):
                                                    decoder_end_token], axis=1)
 
 
-    def build_single_cell(self):
-        cell_type = LSTMCell
-        if (self.cell_type.lower() == 'gru'):
-            cell_type = GRUCell
-        cell = cell_type(self.hidden_units)
-
-        if self.use_dropout:
-            cell = DropoutWrapper(cell, input_keep_prob=self.keep_prob_placeholder,
-                                  output_keep_prob=self.keep_prob_placeholder,
-                                  state_keep_prob=self.keep_prob_placeholder,
-                                  dtype=self.dtype)
-        if self.use_residual:
-            cell = ResidualWrapper(cell)
-            
-        return cell
-
-
     def build_encoder(self):
         print("building encoder..")
         with tf.variable_scope('encoder'):
             # Building encoder_cell
-            self.encoder_cell = MultiRNNCell([self.build_single_cell() for i in range(self.depth)])
+            self.encoder_cell = self.build_encoder_cell()
             
             # Initialize encoder_embeddings to have variance=1.
             sqrt3 = math.sqrt(3)  # Uniform(-sqrt(3), sqrt(3)) has variance=1.
@@ -129,19 +125,20 @@ class Seq2SeqModel(object):
                 shape=[self.num_encoder_symbols, self.embedding_size],
                 initializer=initializer, dtype=self.dtype)
             
-            # Embedded_inputs: [batch_size x time_step x embedding_size]
+            # Embedded_inputs: [batch_size, time_step, embedding_size]
             self.encoder_inputs_embedded = tf.nn.embedding_lookup(
                 params=self.encoder_embeddings, ids=self.encoder_inputs)
-        
+       
             # Input projection layer to feed embedded inputs to the cell
+            # ** Essential when use_residual=True to match input/output dims
             input_layer = Dense(self.hidden_units, dtype=self.dtype, name='input_projection')
 
             # Embedded inputs having gone through input projection layer
             self.encoder_inputs_embedded = input_layer(self.encoder_inputs_embedded)
     
             # Encode input sequences into context vectors:
-            # encoder_outputs: [batch_size x max_time_step x cell_output_size]
-            # encoder_state: [batch_size x cell_output_size]
+            # encoder_outputs: [batch_size, max_time_step, cell_output_size]
+            # encoder_state: [batch_size, cell_output_size]
             self.encoder_outputs, self.encoder_last_state = tf.nn.dynamic_rnn(
                 cell=self.encoder_cell, inputs=self.encoder_inputs_embedded,
                 sequence_length=self.encoder_inputs_length, dtype=self.dtype,
@@ -151,51 +148,8 @@ class Seq2SeqModel(object):
     def build_decoder(self):
         print("building decoder and attention..")
         with tf.variable_scope('decoder'):
-            # Building decoder_cell
-            self.decoder_cell = self.build_single_cell()
-             
-            attention_mechanism = None
-            # 'Bahdanau' style attention: https://arxiv.org/abs/1409.0473
-            if self.attention_type.lower() == 'bahdanau':
-                attention_mechanism = seq2seq.BahdanauAttention(
-                   num_units=self.hidden_units, memory=self.encoder_outputs,
-                    memory_sequence_length=self.encoder_inputs_length,
-                    normalize=False, probability_fn=tf.nn.softmax) 
-
-            # 'Luong' style attention: https://arxiv.org/abs/1508.04025
-            if self.attention_type.lower() == 'luong':
-                attention_mechanism = seq2seq.LuongAttention(
-                    num_units=self.hidden_units, memory=self.encoder_outputs, 
-                    memory_sequence_length=self.encoder_inputs_length,
-                    probability_fn=tf.nn.softmax)
-
-            if attention_mechanism != None:
-                def attn_decoder_input_fn(inputs, attention):
-                    if not self.attn_input_feeding:
-                        return inputs
-
-                    _input_layer = Dense(self.hidden_units, dtype=self.dtype,
-                                         name='attn_input_feeding')
-                    return _input_layer(array_ops.concat([inputs, attention], -1))
-
-                # AttentionWrapper wraps RNNCell with the corresponding attention
-                self.decoder_cell = seq2seq.AttentionWrapper(
-                    cell=self.decoder_cell,
-                    attention_mechanism=attention_mechanism,
-                    attention_layer_size=self.hidden_units,
-                    cell_input_fn=attn_decoder_input_fn,
-                    initial_cell_state=self.encoder_last_state[-1],
-                    name='Attention_Wrapper')
-
-                # To use AttentionWrapper, decoder initial state (=encoder last state)
-                # should be converted into the AttentionWrapperState form
-                encoder_state_list = [state for state in self.encoder_last_state]
-                encoder_state_list[-1] = self.decoder_cell.zero_state(self.batch_size, self.dtype)
-                self.encoder_last_state = tuple(encoder_state_list)
-            
-            cell_list = [self.build_single_cell() for i in range(self.depth-1)]
-            # We implement Attention mechanism only on the top decoder layer
-            self.decoder_cell = MultiRNNCell(cell_list + [self.decoder_cell])
+            # Building decoder_cell and decoder_initial_state
+            self.decoder_cell, self.decoder_initial_state = self.build_decoder_cell()
 
             # Initialize decoder embeddings to have variance=1.
             sqrt3 = math.sqrt(3)  # Uniform(-sqrt(3), sqrt(3)) has variance=1.
@@ -206,13 +160,14 @@ class Seq2SeqModel(object):
                 initializer=initializer, dtype=self.dtype)
 
             # Input projection layer to feed embedded inputs to the cell
+            # ** Essential when use_residual=True to match input/output dims
             input_layer = Dense(self.hidden_units, dtype=self.dtype, name='input_projection')
 
             # Output projection layer to convert cell_outputs to logits
             output_layer = Dense(self.num_decoder_symbols, name='output_projection')
 
-            if self.mode == 'training':
-                # decoder_inputs_embedded: [batch_size x max_time_step + 1 x embedding_size]
+            if self.mode == 'train':
+                # decoder_inputs_embedded: [batch_size, max_time_step + 1, embedding_size]
                 self.decoder_inputs_embedded = tf.nn.embedding_lookup(
                     params=self.decoder_embeddings, ids=self.decoder_inputs_train)
                
@@ -227,15 +182,17 @@ class Seq2SeqModel(object):
 
                 training_decoder = seq2seq.BasicDecoder(cell=self.decoder_cell,
                                                    helper=training_helper,
-                                                   initial_state=self.encoder_last_state,
-                                                   output_layer=None)
+                                                   initial_state=self.decoder_initial_state,
+                                                   output_layer=output_layer)
+                                                   #output_layer=None)
                     
-                # Maximum time_steps in current batch
+                # Maximum decoder time_steps in current batch
                 max_decoder_length = tf.reduce_max(self.decoder_inputs_length_train)
 
-                # decoder_outputs_train: collections.namedtuple(rnn_outputs, sample_id)
-                # decoder_outputs_train.rnn_output: [batch_size x max_time_step + 1 x hidden_units] if output_time_major=False
-                #                                   [max_time_step + 1 x batch_size x hidden_units] if output_time_major=True
+                # decoder_outputs_train: BasicDecoderOutput
+                #                        namedtuple(rnn_outputs, sample_id)
+                # decoder_outputs_train.rnn_output: [batch_size, max_time_step + 1, num_decoder_symbols] if output_time_major=False
+                #                                   [max_time_step + 1, batch_size, num_decoder_symbols] if output_time_major=True
                 # decoder_outputs_train.sample_id: [batch_size], tf.int32
                 (self.decoder_outputs_train, self.decoder_last_state_train, 
                  self.decoder_outputs_length_train) = (seq2seq.dynamic_decode(
@@ -245,14 +202,14 @@ class Seq2SeqModel(object):
                     maximum_iterations=max_decoder_length))
                  
                 # More efficient to do the projection on the batch-time-concatenated tensor
-                # logits_train: [batch_size x max_time_step + 1 x num_decoder_symbols]
-                self.decoder_logits_train = output_layer(self.decoder_outputs_train.rnn_output)
-                
+                # logits_train: [batch_size, max_time_step + 1, num_decoder_symbols]
+                # self.decoder_logits_train = output_layer(self.decoder_outputs_train.rnn_output)
+                self.decoder_logits_train = tf.identity(self.decoder_outputs_train.rnn_output) 
                 # Use argmax to extract decoder symbols to emit
                 self.decoder_pred_train = tf.argmax(self.decoder_logits_train, axis=-1,
                                                     name='decoder_pred_train')
 
-                # masks: masking for valid and padded time steps, [batch_size x max_time_step + 1]
+                # masks: masking for valid and padded time steps, [batch_size, max_time_step + 1]
                 masks = tf.sequence_mask(lengths=self.decoder_inputs_length_train, 
                                          maxlen=max_decoder_length, dtype=self.dtype, name='masks')
 
@@ -267,49 +224,44 @@ class Seq2SeqModel(object):
                 # Contruct graphs for minimizing loss
                 self.init_optimizer()
 
-            elif self.mode == 'decoding':
-
-                # start_tokens: [batch_size] `int32` vector
-                start_tokens = tf.ones(self.batch_size) * data_utils.start_token
+            elif self.mode == 'decode':
+        
+                # Start_tokens: [batch_size,] `int32` vector
+                start_tokens = self.batch_size * [data_utils.start_token]
+#                start_tokens = tf.ones([self.batch_size,], dtype=tf.int32) * data_utils.start_token
                 end_token = data_utils.end_token
 
                 def embed_and_input_proj(inputs):
                     return input_layer(tf.nn.embedding_lookup(self.decoder_embeddings, inputs))
                     
-
-                isGreedyDecoding = (self.beam_width == None or self.beam_width <= 1)
-                if isGreedyDecoding:
+                if not self.use_beamsearch_decode:
                     # Helper to feed inputs for greedy decoding: uses the argmax of the output
                     decoding_helper = seq2seq.GreedyEmbeddingHelper(start_tokens=start_tokens,
-                                                                    end_toke=end_token,
+                                                                    end_token=end_token,
                                                                     embedding=embed_and_input_proj)
-
-                    # Basic decoder to perform greedy decoding
-                    translate_decoder = seq2seq.BasicDecoder(cell=self.decoder_cell,
+                    # Basic decoder performs greedy decoding at each time step
+                    print("building greedy decoder..")
+                    inference_decoder = seq2seq.BasicDecoder(cell=self.decoder_cell,
                                                              helper=decoding_helper,
-                                                             initial_state=self.encoder_last_state,
+                                                             initial_state=self.decoder_initial_state,
                                                              output_layer=output_layer)
-
                 else:
-                    # To use BeamSearchDecoder, initial_state needs to be tiled
-                    # encoder_last_state: [batch_size, hidden_units] -> [batch_size x beam_width, hidden_units]
-                    self.encoder_last_state = seq2seq.tile_batch(
-                        self.encoder_last_state, self.decoder_beam_width, name='tile_batch')
-
                     # Beamsearch is used to approximately find the most likely translation
-                    translate_decoder = seq2seq.BeamSearchDecoder(cell=self.decoder_cell,
+                    print("building beamsearch decoder..")
+                    inference_decoder = beam_search_decoder.BeamSearchDecoder(cell=self.decoder_cell,
                                                                embedding=embed_and_input_proj,
                                                                start_tokens=start_tokens,
-                                                               end_token=self.end_token,
-                                                               initial_state=self.encoder_last_state,
-                                                               beam_width=self.decoder_beam_width,
+                                                               end_token=end_token,
+                                                               initial_state=self.decoder_initial_state,
+                                                               beam_width=self.beam_width,
                                                                output_layer=output_layer,)
-                
                 # For GreedyDecoder, return
-                # decoder_outputs_decode: collections.namedtuple(rnn_outputs, sample_id)
-                # decoder_outputs_decode.rnn_output: [batch_size, max_time_step, num_decoder_symbols] if output_time_major=False
-                #                                    [max_time_step, batch_size, num_decoder_symbols] if output_time_major=True
-                # decoder_outputs_decode.sample_id: [batch_size], tf.int32
+                # decoder_outputs_decode: BasicDecoderOutput
+                #                         namedtuple(rnn_outputs, sample_id)
+                # decoder_outputs_decode.rnn_output: [batch_size, max_time_step, num_decoder_symbols] 	if output_time_major=False
+                #                                    [max_time_step, batch_size, num_decoder_symbols] 	if output_time_major=True
+                # decoder_outputs_decode.sample_id: [batch_size, max_time_step], tf.int32		if output_time_major=False
+                #                                   [max_time_step, batch_size], tf.int32               if output_time_major=True 
                 
                 # For BeamSearchDecoder, return
                 # decoder_outputs_decode: FinalBeamSearchDecoderOutput instance
@@ -321,19 +273,123 @@ class Seq2SeqModel(object):
 
                 (self.decoder_outputs_decode, self.decoder_last_state_decode,
                  self.decoder_outputs_length_decode) = (seq2seq.dynamic_decode(
-                    decoder=translate_decoder,
+                    decoder=inference_decoder,
                     output_time_major=False,
-                    impute_finished=True,
-                    maximum_iterations=None))
+                    #impute_finished=True,	# error occurs
+                    maximum_iterations=self.max_decode_step))
 
-                if isGreedyDecoding:
-                    # Use argmax to find decoder symbols to emit: [batch_size, max_time_step]
-                    self.decoder_pred_decoding = tf.argmax(self.decoder_outputs_decode, axis=-1,
-                                                           name='decoder_pred_decoding')
+                if not self.use_beamsearch_decode:
+                    # decoder_outputs_decode.sample_id: [batch_size, max_time_step]
+                    # Or use argmax to find decoder symbols to emit: [batch_size, max_time_step]
+                    # self.decoder_pred_decode = tf.argmax(self.decoder_outputs_decode.rnn_output,
+                    #                                        axis=-1, name='decoder_pred_decode')
+
+                    # Here, we use expand_dims to be compatible with the result of the beamsearch decoder
+                    # decoder_pred_decode: [batch_size, max_time_step, 1] (output_major=False)
+                    self.decoder_pred_decode = tf.expand_dims(self.decoder_outputs_decode.sample_id, 1)
+
                 else:
                     # Use beam search to approximately find the most likely translation
-                    # [batch_size, max_time_step, beam_width] (output_major=False)
-                    self.decoder_pred_decoding = tf.identity(self.decoder_outputs_decode)
+                    # decoder_pred_decode: [batch_size, max_time_step, beam_width] (output_major=False)
+                    self.decoder_pred_decode = self.decoder_outputs_decode.predicted_ids
+
+
+    def build_single_cell(self):
+        cell_type = LSTMCell
+        if (self.cell_type.lower() == 'gru'):
+            cell_type = GRUCell
+        cell = cell_type(self.hidden_units)
+
+        if self.use_dropout:
+            cell = DropoutWrapper(cell, dtype=self.dtype,
+                                  output_keep_prob=self.keep_prob_placeholder,)
+        if self.use_residual:
+            cell = ResidualWrapper(cell)
+            
+        return cell
+
+
+    # Building encoder cell
+    def build_encoder_cell (self):
+
+        return MultiRNNCell([self.build_single_cell() for i in range(self.depth)])
+
+
+    # Building decoder cell and attention. Also returns decoder_initial_state
+    def build_decoder_cell(self):
+
+        encoder_outputs = self.encoder_outputs
+        encoder_last_state = self.encoder_last_state
+        encoder_inputs_length = self.encoder_inputs_length
+
+        use_beamsearch_decode = (self.mode.lower() == 'decode' and self.beam_width > 1)
+        # To use BeamSearchDecoder, encoder_outputs, encoder_last_state, encoder_inputs_length 
+        # needs to be tiled so that: [batch_size, .., ..] -> [batch_size x beam_width, .., ..]
+        if self.use_beamsearch_decode:
+            print ("use beamsearch decoding..")
+            encoder_outputs = seq2seq.tile_batch(
+                self.encoder_outputs, multiplier=self.beam_width)
+            encoder_last_state = nest.map_structure(
+                lambda s: seq2seq.tile_batch(s, self.beam_width), self.encoder_last_state)
+            encoder_inputs_length = seq2seq.tile_batch(
+                self.encoder_inputs_length, multiplier=self.beam_width)
+
+        # Building attention mechanism: Default Bahdanau
+        # 'Bahdanau' style attention: https://arxiv.org/abs/1409.0473
+        self.attention_mechanism = attention_wrapper.BahdanauAttention(
+            num_units=self.hidden_units, memory=encoder_outputs,
+            memory_sequence_length=encoder_inputs_length,) 
+        # 'Luong' style attention: https://arxiv.org/abs/1508.04025
+        if self.attention_type.lower() == 'luong':
+            self.attention_mechanism = attention_wrapper.LuongAttention(
+                num_units=self.hidden_units, memory=encoder_outputs, 
+                memory_sequence_length=encoder_inputs_length,)
+ 
+        # Building decoder_cell
+        self.decoder_cell_list = [
+            self.build_single_cell() for i in range(self.depth)]
+        decoder_initial_state = encoder_last_state
+
+        def attn_decoder_input_fn(inputs, attention):
+            if not self.attn_input_feeding:
+                return inputs
+
+            # Essential when use_residual=True
+            _input_layer = Dense(self.hidden_units, dtype=self.dtype,
+                                 name='attn_input_feeding')
+            return _input_layer(array_ops.concat([inputs, attention], -1))
+
+        # AttentionWrapper wraps RNNCell with the attention_mechanism
+        # Note: We implement Attention mechanism only on the top decoder layer
+        self.decoder_cell_list[-1] = attention_wrapper.AttentionWrapper(
+            cell=self.decoder_cell_list[-1],
+            attention_mechanism=self.attention_mechanism,
+            attention_layer_size=self.hidden_units,
+            cell_input_fn=attn_decoder_input_fn,
+            initial_cell_state=encoder_last_state[-1],
+            alignment_history=False,
+            name='Attention_Wrapper')
+
+        # To be compatible with AttentionWrapper, the encoder last state
+        # of the top layer should be converted into the AttentionWrapperState form
+        # We can easily do this by calling AttentionWrapper.zero_state
+
+        # Also if beamsearch decoding is used, the batch_size argument in .zero_state
+        # should be ${decoder_beam_width} times to the origianl batch_size
+        batch_size = self.batch_size * self.beam_width if use_beamsearch_decode \
+                     else self.batch_size
+        initial_state = [state for state in encoder_last_state]
+
+        print("decoder_cell_zero_state")
+        print(self.decoder_cell_list[-1].zero_state(batch_size, self.dtype))
+
+        print("decoder_cell.state_size")
+        print(self.decoder_cell_list[-1].state_size)
+        initial_state[-1] = self.decoder_cell_list[-1].zero_state(
+          batch_size=batch_size, dtype=self.dtype)
+        decoder_initial_state = tuple(initial_state)
+
+        return MultiRNNCell(self.decoder_cell_list), decoder_initial_state
 
 
     def init_optimizer(self):
@@ -349,13 +405,13 @@ class Seq2SeqModel(object):
         else:
             self.opt = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
-        # Take gradients of loss w.r.t. all trainable variables
+        # Compute gradients of loss w.r.t. all trainable variables
         gradients = tf.gradients(self.loss, trainable_params)
 
         # Clip gradients by a given maximum_gradient_norm
         clip_gradients, _ = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
 
-        # Apply the computed gradients to the model update
+        # Update the model
         self.updates = self.opt.apply_gradients(
             zip(gradients, trainable_params), global_step=self.global_step)
 
@@ -383,11 +439,11 @@ class Seq2SeqModel(object):
 
         Args:
           session: tensorflow session to use.
-          encoder_inputs: a numpy int matrix of [batch_size x max_source_time_steps]
+          encoder_inputs: a numpy int matrix of [batch_size, max_source_time_steps]
               to feed as encoder inputs
           encoder_inputs_length: a numpy int vector of [batch_size] 
               to feed as sequence lengths for each element in the given batch
-          decoder_inputs: a numpy int matrix of [batch_size x max_target_time_steps]
+          decoder_inputs: a numpy int matrix of [batch_size, max_target_time_steps]
               to feed as decoder inputs
           decoder_inputs_length: a numpy int vector of [batch_size]
               to feed as sequence lengths for each element in the given batch
@@ -397,8 +453,8 @@ class Seq2SeqModel(object):
           average perplexity, and the outputs.
         """
         # Check if the model is 'training' mode
-        if self.mode.lower() != 'training':
-            raise ValueError("training step can only be operated on training mode")
+        if self.mode.lower() != 'train':
+            raise ValueError("train step can only be operated in train mode")
 
         input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length,
                                       decoder_inputs, decoder_inputs_length, False)
@@ -418,11 +474,11 @@ class Seq2SeqModel(object):
 
         Args:
           session: tensorflow session to use.
-          encoder_inputs: a numpy int matrix of [batch_size x max_source_time_steps]
+          encoder_inputs: a numpy int matrix of [batch_size, max_source_time_steps]
               to feed as encoder inputs
           encoder_inputs_length: a numpy int vector of [batch_size] 
               to feed as sequence lengths for each element in the given batch
-          decoder_inputs: a numpy int matrix of [batch_size x max_target_time_steps]
+          decoder_inputs: a numpy int matrix of [batch_size, max_target_time_steps]
               to feed as decoder inputs
           decoder_inputs_length: a numpy int vector of [batch_size]
               to feed as sequence lengths for each element in the given batch
@@ -444,12 +500,13 @@ class Seq2SeqModel(object):
 
     def predict(self, sess, encoder_inputs, encoder_inputs_length):
         
-        input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length, decode=True)
+        input_feed = self.check_feeds(encoder_inputs, encoder_inputs_length, 
+                                      None, None, decode=True)
 
         # Input feeds for dropout
         input_feed[self.keep_prob_placeholder.name] = 1.0
  
-        output_feed = [self.decoder_pred_decoding]
+        output_feed = [self.decoder_pred_decode]
         outputs = sess.run(output_feed, input_feed)
 
 				# GreedyDecoder: [batch_size, max_time_step]
@@ -460,11 +517,11 @@ class Seq2SeqModel(object):
                     decoder_inputs, decoder_inputs_length, decode):
         """
         Args:
-          encoder_inputs: a numpy int matrix of [batch_size x max_source_time_steps]
+          encoder_inputs: a numpy int matrix of [batch_size, max_source_time_steps]
               to feed as encoder inputs
           encoder_inputs_length: a numpy int vector of [batch_size] 
               to feed as sequence lengths for each element in the given batch
-          decoder_inputs: a numpy int matrix of [batch_size x max_target_time_steps]
+          decoder_inputs: a numpy int matrix of [batch_size, max_target_time_steps]
               to feed as decoder inputs
           decoder_inputs_length: a numpy int vector of [batch_size]
               to feed as sequence lengths for each element in the given batch

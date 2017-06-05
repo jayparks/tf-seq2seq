@@ -1,5 +1,8 @@
 **/*.pyc
+**/*.swp
 model/
 data_/
+fr_mix_de_mix/
+en-de/
 en-fr/
-.ipython*
+.ipynb*

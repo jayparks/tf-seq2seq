@@ -28,11 +28,9 @@ def main():
 
         worddict = OrderedDict()
         for ii, ww in enumerate(extra_tokens):
-#        for ii, ww in enumerate(data_utils.extra_tokens):
             worddict[ww] = ii
         for ii, ww in enumerate(sorted_words):
             worddict[ww] = ii + len(extra_tokens)
-#            worddict[ww] = ii + len(data_utils.extra_tokens)
 
         with open('%s.json'%filename, 'wb') as f:
             json.dump(worddict, f, indent=2, ensure_ascii=False)
