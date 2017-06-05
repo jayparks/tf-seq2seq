@@ -3,20 +3,19 @@
 
 The core building blocks are RNN Encoder-Decoder architectures and Attention mechanism.
 
-The package was largely implemented by using the latest (1.2.rc1) tf.contrib.seq2seq modules
+The package was largely implemented using the latest (1.2.rc1) tf.contrib.seq2seq modules
 - AttentionWrapper
 - Decoder
 - BasicDecoder
 - BeamSearchDecoder
 
 **The package supports**
-- Multi-layer
+- Multi-layer GRU/LSTM
 - Residual connection
 - Dropout
 - Attention and input_feeding
 - Beamsearch decoding 
 - Write n-best list
-- **As of 1.2.rc1, the BeamSearchDecoder API works but does not produce correct outputs**
 
 # Dependencies
 - NumPy >= 1.11.1
@@ -31,7 +30,7 @@ cd data/
 ./preprocess.sh src trg sample_data ${max_seq_len}
 ```
 
-Running above code performs widely used preprocessing steps for Machine Translation (MT).
+Running the above code performs widely used preprocessing steps for Machine Translation (MT).
 
 - Normalizing punctuation
 - Tokenizing
@@ -82,9 +81,9 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--embedding_size</code> : Embedding dimensions of encoder and decoder inputs (default: 500)
 - <code>--num_encoder_symbols</code> : Source vocabulary size to use (default: 30000)
 - <code>--num_decoder_symbols</code> : Target vocabulary size to use (default: 30000)
-- <code>--use_residual</code> : Number of hidden units for each layer in the model (default: True)
+- <code>--use_residual</code> : Use residual connection between layers (default: True)
 - <code>--attn_input_feeding</code> : Use input feeding method in attentional decoder (Luong et al., 2015) (default: True)
-- <code>--use_dropout</code> : Use dropout in each rnn cell (default: True)
+- <code>--use_dropout</code> : Use dropout in rnn cell output (default: True)
 - <code>--dropout_rate</code> : Dropout probability for cell outputs (0.0: no dropout) (default: 0.3)
 
 **Training params**
@@ -92,7 +91,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--max_gradient_norm</code> : Clip gradients to this norm (default 1.0)
 - <code>--batch_size</code> : Batch size
 - <code>--max_epochs</code> : Maximum training epochs
-- <code>--max_load_batches</code> : Maximum number of batches to load at one time
+- <code>--max_load_batches</code> : Maximum number of batches to prefetch at one time.
 - <code>--max_seq_length</code> : Maximum sequence length
 - <code>--display_freq</code> : Display training status every this iteration
 - <code>--save_freq</code> : Save model checkpoint every this iteration
@@ -117,7 +116,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 
 
 ## History
-- June 5, 2017: Major update. Resolved incompatibility issue between BeamSearchDecoder and AttentionWrapper with no predefined input time steps.
+- June 5, 2017: Major update
 
 
 ## Acknowledgements
