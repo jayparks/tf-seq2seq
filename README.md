@@ -35,7 +35,7 @@ Running above code performs widely used preprocessing steps for Machine Translat
 
 - Normalizing punctuation
 - Tokenizing
-- Bytepair encoding (# merge = 3000) (Sennrich et al., 2016)
+- Bytepair encoding (# merge = 30000) (Sennrich et al., 2016)
 - Cleaning sequences of length over ${max_seq_len}
 - Shuffling
 - Building dictionaries
