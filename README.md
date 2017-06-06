@@ -117,6 +117,7 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 
 ## History
 - June 5, 2017: Major update
+- Jung 6, 2017: Supports batch beamsearch decoding
 
 
 ## Acknowledgements
