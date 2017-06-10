@@ -30,43 +30,41 @@ class Seq2SeqModel(object):
 
         assert mode.lower() in ['train', 'decode']
 
+        self.config = config
         self.mode = mode.lower()
 
-        self.cell_type = config.cell_type 
-        self.hidden_units = config.hidden_units
-        self.depth = config.depth
-        self.attention_type = config.attention_type
-        self.embedding_size = config.embedding_size
-#        self.bidirectional = config.bidirectional
+        self.cell_type = config['cell_type']
+        self.hidden_units = config['hidden_units']
+        self.depth = config['depth']
+        self.attention_type = config['attention_type']
+        self.embedding_size = config['embedding_size']
+        #self.bidirectional = config.bidirectional
        
-        # currently we support batch_size=1 for decoding 
-        self.batch_size = 1 if self.mode =='decode' \
-                          else config.batch_size
-        self.num_encoder_symbols = config.num_encoder_symbols
-        self.num_decoder_symbols = config.num_decoder_symbols
+        self.num_encoder_symbols = config['num_encoder_symbols']
+        self.num_decoder_symbols = config['num_decoder_symbols']
 
-        self.use_residual = config.use_residual
-        self.attn_input_feeding = config.attn_input_feeding
-        self.use_dropout = config.use_dropout
-        self.keep_prob = 1.0 - config.dropout_rate
+        self.use_residual = config['use_residual']
+        self.attn_input_feeding = config['attn_input_feeding']
+        self.use_dropout = config['use_dropout']
+        self.keep_prob = 1.0 - config['dropout_rate']
 
-        self.optimizer = config.optimizer
-        self.learning_rate = config.learning_rate
-        self.max_gradient_norm = config.max_gradient_norm
+        self.optimizer = config['optimizer']
+        self.learning_rate = config['learning_rate']
+        self.max_gradient_norm = config['max_gradient_norm']
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
         self.global_epoch_step = tf.Variable(0, trainable=False, name='global_epoch_step')
         self.global_epoch_step_op = \
 	    tf.assign(self.global_epoch_step, self.global_epoch_step+1)
-        
-        self.beam_width = config.beam_width
-        self.use_beamsearch_decode = False
-        if self.mode == 'decode' and self.beam_width > 1:
-            self.use_beamsearch_decode = True
-        self.max_decode_step = config.max_decode_step
-        
-        self.dtype = tf.float16 if config.use_fp16 else tf.float32
+
+        self.dtype = tf.float16 if config['use_fp16'] else tf.float32
         self.keep_prob_placeholder = tf.placeholder(self.dtype, shape=[], name='keep_prob')
 
+        self.use_beamsearch_decode=False 
+        if self.mode == 'decode':
+            self.beam_width = config['beam_width']
+            self.use_beamsearch_decode = True if self.beam_width > 1 else False
+            self.max_decode_step = config['max_decode_step']
+ 
         self.build_model()
 
        
@@ -86,10 +84,9 @@ class Seq2SeqModel(object):
         self.encoder_inputs_length = tf.placeholder(
             dtype=tf.int32, shape=(None,), name='encoder_inputs_length')
 
+        # get dynamic batch_size
         self.batch_size = tf.shape(self.encoder_inputs)[0]
         if self.mode == 'train':
-            # In training mode, get dynamic_batch_size
-       #     self.batch_size = tf.shape(self.encoder_inputs)[0]
 
             # decoder_inputs: [batch_size, max_time_steps]
             self.decoder_inputs = tf.placeholder(
@@ -234,8 +231,6 @@ class Seq2SeqModel(object):
         
                 # Start_tokens: [batch_size,] `int32` vector
                 start_tokens = tf.ones([self.batch_size,], tf.int32) * data_utils.start_token
-#                batch_size_tensor = constant_op.constant(self.batch_size)
-#                start_tokens = array_ops.fill([batch_size_tensor], data_utils.start_token)
                 end_token = data_utils.end_token
 
                 def embed_and_input_proj(inputs):
@@ -329,7 +324,6 @@ class Seq2SeqModel(object):
         encoder_last_state = self.encoder_last_state
         encoder_inputs_length = self.encoder_inputs_length
 
-        use_beamsearch_decode = (self.mode.lower() == 'decode' and self.beam_width > 1)
         # To use BeamSearchDecoder, encoder_outputs, encoder_last_state, encoder_inputs_length 
         # needs to be tiled so that: [batch_size, .., ..] -> [batch_size x beam_width, .., ..]
         if self.use_beamsearch_decode:
@@ -383,8 +377,8 @@ class Seq2SeqModel(object):
 
         # Also if beamsearch decoding is used, the batch_size argument in .zero_state
         # should be ${decoder_beam_width} times to the origianl batch_size
-        batch_size = self.batch_size * self.beam_width if use_beamsearch_decode \
-                     else self.batch_size
+        batch_size = self.batch_size if not self.use_beamsearch_decode \
+                     else self.batch_size * self.beam_width
         initial_state = [state for state in encoder_last_state]
 
         initial_state[-1] = self.decoder_cell_list[-1].zero_state(
