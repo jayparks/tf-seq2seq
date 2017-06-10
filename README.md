@@ -64,7 +64,7 @@ To run the trained model for decoding,
 ```ruby
 $ python decode.py  --beam_width 5 \
                     --decode_batch_size 30 \
-                    --model_path $PATH_TO_A_MODEL_CHECKPOINT (e.g model/translate.ckpt-100) \
+                    --model_path $PATH_TO_A_MODEL_CHECKPOINT (e.g. model/translate.ckpt-100) \
                     --max_decode_step 300 \
                     --write_n_best False
                     --decode_input $PATH_TO_DECODE_INPUT
