@@ -21,6 +21,14 @@ The package was largely implemented using the latest (1.2.rc1) tf.contrib.seq2se
 - NumPy >= 1.11.1
 - Tensorflow >= 1.2.rc1
 
+
+# History
+- June 5, 2017: Major update
+- June 6, 2017: Supports batch beamsearch decoding
+- June 11, 2017: Separted training / decoding
+
+
+
 # Usage Instructions
 ## **Data Preparation**
 
@@ -42,24 +50,25 @@ Running the above code performs widely used preprocessing steps for Machine Tran
 ## **Training**
 To train a seq2seq model,
 ```ruby
-$ python seq2seq.py --cell_type='lstm' \ 
-                    --attention_type='luong' \
-                    --hidden_units=1024 \
-                    --depth=2 \
-                    --embedding_size=500 \
-                    --num_encoder_symbols=30000 \
-                    --num_decoder_symbols=30000 ...
+$ python train.py   --cell_type 'lstm' \ 
+                    --attention_type 'luong' \
+                    --hidden_units 1024 \
+                    --depth 2 \
+                    --embedding_size 500 \
+                    --num_encoder_symbols 30000 \
+                    --num_decoder_symbols 30000 ...
 ```
 
 ## **Decoding**
 To run the trained model for decoding,
 ```ruby
-$ python seq2seq.py --decode \
-                    --beam_width=5 \
-                    --max_decode_step=300 \
-                    --write_n_best
-                    --decode_input=$PATH_TO_DECODE_INPUT
-                    --decode_output=$PATH_TO_DECODE_OUTPUT
+$ python decode.py  --beam_width 5 \
+                    --decode_batch_size 30 \
+                    --model_path $PATH_TO_A_MODEL_CHECKPOINT (e.g model/translate.ckpt-100) \
+                    --max_decode_step 300 \
+                    --write_n_best False
+                    --decode_input $PATH_TO_DECODE_INPUT
+                    --decode_output $PATH_TO_DECODE_OUTPUT
                     
 ```
 If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
@@ -103,8 +112,8 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--sort_by_length</code> : Sort pre-fetched minibatches by their target sequence lengths (default: True)
 
 **Decoding params**
-- <code>--decode</code> : Use decode mode (default: False)
 - <code>--beam_width</code> : Beam width used in beamsearch (default: 1)
+- <code>--decode_batch_size</code> : Batch size used in decoding
 - <code>--max_decode_step</code> : Maximum time step limit in decoding (default: 500)
 - <code>--write_n_best</code> : Write beamsearch n-best list (n=beam_width) (default: False)
 - <code>--decode_input</code> : Input file path to decode
@@ -115,15 +124,10 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 - <code>--log_device_placement</code> : Log placement of ops on devices
 
 
-## History
-- June 5, 2017: Major update
-- Jung 6, 2017: Supports batch beamsearch decoding
-
-
 ## Acknowledgements
 
 The implementation is based on following projects:
-- [nematus](https://github.com/rsennrich/nematus/): Theano implementation of Neural Machine Translation
+- [nematus](https://github.com/rsennrich/nematus/): Theano implementation of Neural Machine Translation. Major reference of this project
 - [tf.seq2seq_legacy](https://github.com/tensorflow/models/tree/master/tutorials/rnn/translate) Legacy Tensorflow seq2seq tutorial
 - [tf_tutorial_plus](https://github.com/j-min/tf_tutorial_plus): Nice tutorials for tf.contrib.seq2seq API
 
