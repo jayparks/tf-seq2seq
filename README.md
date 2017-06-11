@@ -128,6 +128,8 @@ If <code>--beam_width=1</code>, greedy decoding is performed at each time-step.
 
 The implementation is based on following projects:
 - [nematus](https://github.com/rsennrich/nematus/): Theano implementation of Neural Machine Translation. Major reference of this project
+- [subword-nmt](https://github.com/rsennrich/subword-nmt/): Included subword-unit scripts to preprocess input data
+- [moses](https://github.com/moses-smt/mosesdecoder): Included preprocessing scripts to preprocess input data
 - [tf.seq2seq_legacy](https://github.com/tensorflow/models/tree/master/tutorials/rnn/translate) Legacy Tensorflow seq2seq tutorial
 - [tf_tutorial_plus](https://github.com/j-min/tf_tutorial_plus): Nice tutorials for tf.contrib.seq2seq API
 
