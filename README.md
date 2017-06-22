@@ -19,14 +19,14 @@ The package was largely implemented using the latest (1.2.rc1) tf.contrib.seq2se
 
 # Dependencies
 - NumPy >= 1.11.1
-- Tensorflow >= 1.2.rc1
+- Tensorflow >= 1.2
 
 
 # History
 - June 5, 2017: Major update
 - June 6, 2017: Supports batch beamsearch decoding
 - June 11, 2017: Separted training / decoding
-
+- June 22, 2017: Supports tf.1.2 (contrib.rnn -> python.ops.rnn_cell)
 
 
 # Usage Instructions
