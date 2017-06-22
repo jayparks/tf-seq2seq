@@ -22,11 +22,11 @@ perl tokenizer.perl -l ${T} -threads 10 < ${CORPUS}.norm.${T} > ${CORPUS}.tok.${
 
 echo "learning bpe.."
 # learn BPE on joint vocabulary
-cat ${CORPUS}.tok.${S} ${CORPUS}.tok.${T} | python subword-nmt/learn_bpe.py -s 30000 > ${S}${T}.bpe
+cat ${CORPUS}.tok.${S} ${CORPUS}.tok.${T} | python subword_nmt/learn_bpe.py -s 30000 > ${S}${T}.bpe
 
 echo "applying bpe.."
-python subword-nmt/apply_bpe.py -c ${S}${T}.bpe < ${CORPUS}.tok.${S} > ${CORPUS}.bpe.${S}
-python subword-nmt/apply_bpe.py -c ${S}${T}.bpe < ${CORPUS}.tok.${T} > ${CORPUS}.bpe.${T}
+python subword_nmt/apply_bpe.py -c ${S}${T}.bpe < ${CORPUS}.tok.${S} > ${CORPUS}.bpe.${S}
+python subword_nmt/apply_bpe.py -c ${S}${T}.bpe < ${CORPUS}.tok.${T} > ${CORPUS}.bpe.${T}
 
 echo "cleaning: filtering sequences of length over ${MAXLEN}"
 perl clean-corpus-n.perl ${CORPUS}.bpe ${S} ${T} ${CORPUS}.clean 1 ${MAXLEN}
