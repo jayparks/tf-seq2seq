@@ -7,10 +7,10 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.seq2seq as seq2seq
 
-from tensorflow.contrib.rnn import GRUCell
-from tensorflow.contrib.rnn import LSTMCell
-from tensorflow.contrib.rnn import MultiRNNCell
-from tensorflow.contrib.rnn import DropoutWrapper, ResidualWrapper
+from tensorflow.python.ops.rnn_cell import GRUCell
+from tensorflow.python.ops.rnn_cell import LSTMCell
+from tensorflow.python.ops.rnn_cell import MultiRNNCell
+from tensorflow.python.ops.rnn_cell import DropoutWrapper, ResidualWrapper
 
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
