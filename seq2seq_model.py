@@ -19,8 +19,8 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.layers.core import Dense
 from tensorflow.python.util import nest
 
-import attention_wrapper
-import beam_search_decoder
+from tensorflow.contrib.seq2seq.python.ops import attention_wrapper
+from tensorflow.contrib.seq2seq.python.ops import beam_search_decoder
 
 import data.data_utils as data_utils
 
