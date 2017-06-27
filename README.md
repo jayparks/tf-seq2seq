@@ -3,7 +3,7 @@
 
 The core building blocks are RNN Encoder-Decoder architectures and Attention mechanism.
 
-The package was largely implemented using the latest (1.2.rc1) tf.contrib.seq2seq modules
+The package was largely implemented using the latest (1.2) tf.contrib.seq2seq modules
 - AttentionWrapper
 - Decoder
 - BasicDecoder
