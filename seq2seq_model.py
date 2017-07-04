@@ -70,9 +70,14 @@ class Seq2SeqModel(object):
        
     def build_model(self):
         print("building model..")
+
+        # Building encoder and decoder networks
         self.init_placeholders()
         self.build_encoder()
         self.build_decoder()
+
+        # Merge all the training summaries
+        self.summary_op = tf.summary.merge_all()
 
 
     def init_placeholders(self):       
@@ -223,6 +228,8 @@ class Seq2SeqModel(object):
                                                   weights=masks,
                                                   average_across_timesteps=True,
                                                   average_across_batch=True,)
+                # Training summary for the current batch_loss
+                tf.summary.scalar('loss', self.loss)
 
                 # Contruct graphs for minimizing loss
                 self.init_optimizer()
@@ -409,8 +416,7 @@ class Seq2SeqModel(object):
 
         # Update the model
         self.updates = self.opt.apply_gradients(
-            zip(gradients, trainable_params), global_step=self.global_step)
-
+            zip(gradients, trainable_params, global_step=self.global_step)
 
     def save(self, sess, path, var_list=None, global_step=None):
         # var_list = None returns the list of all saveable variables
@@ -458,10 +464,11 @@ class Seq2SeqModel(object):
         input_feed[self.keep_prob_placeholder.name] = self.keep_prob
  
         output_feed = [self.updates,	# Update Op that does optimization
-                       self.loss]	# Loss for this batch
+                       self.loss,	# Loss for current batch
+                       self.summary_op]	# Training summary
         
         outputs = sess.run(output_feed, input_feed)
-        return outputs[1]		# loss
+        return outputs[1], outputs[2]	# loss, summary
 
 
     def eval(self, sess, encoder_inputs, encoder_inputs_length,
@@ -489,9 +496,10 @@ class Seq2SeqModel(object):
         # Input feeds for dropout
         input_feed[self.keep_prob_placeholder.name] = 1.0
 
-        output_feed = [self.loss]
+        output_feed = [self.loss,	# Loss for current batch
+                       self.summary_op]	# Training summary
         outputs = sess.run(output_feed, input_feed)
-        return outputs[0]	# loss
+        return outputs[0], outputs[1]	# loss
 
 
     def predict(self, sess, encoder_inputs, encoder_inputs_length):

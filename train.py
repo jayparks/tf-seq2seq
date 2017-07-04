@@ -35,7 +35,7 @@ tf.app.flags.DEFINE_string('target_valid_data', 'data/newstest2012.bpe.fr', 'Pat
 tf.app.flags.DEFINE_string('cell_type', 'lstm', 'RNN cell for encoder and decoder, default: lstm')
 tf.app.flags.DEFINE_string('attention_type', 'bahdanau', 'Attention mechanism: (bahdanau, luong), default: bahdanau')
 tf.app.flags.DEFINE_integer('hidden_units', 1024, 'Number of hidden units in each layer')
-tf.app.flags.DEFINE_integer('depth', 4, 'Number of layers in each encoder and decoder')
+tf.app.flags.DEFINE_integer('depth', 2, 'Number of layers in each encoder and decoder')
 tf.app.flags.DEFINE_integer('embedding_size', 500, 'Embedding dimensions of encoder and decoder inputs')
 tf.app.flags.DEFINE_integer('num_encoder_symbols', 30000, 'Source vocabulary size')
 tf.app.flags.DEFINE_integer('num_decoder_symbols', 30000, 'Target vocabulary size')
@@ -53,8 +53,8 @@ tf.app.flags.DEFINE_integer('max_epochs', 10, 'Maximum # of training epochs')
 tf.app.flags.DEFINE_integer('max_load_batches', 20, 'Maximum # of batches to load at one time')
 tf.app.flags.DEFINE_integer('max_seq_length', 50, 'Maximum sequence length')
 tf.app.flags.DEFINE_integer('display_freq', 100, 'Display training status every this iteration')
-tf.app.flags.DEFINE_integer('save_freq', 11500, 'Save model checkpoint every this iteration')
-tf.app.flags.DEFINE_integer('valid_freq', 1150000, 'Evaluate model every this iteration: valid_data needed')
+tf.app.flags.DEFINE_integer('save_freq', 500, 'Save model checkpoint every this iteration')
+tf.app.flags.DEFINE_integer('valid_freq', 115000, 'Evaluate model every this iteration: valid_data needed')
 tf.app.flags.DEFINE_string('optimizer', 'adam', 'Optimizer for training: (adadelta, adam, rmsprop)')
 tf.app.flags.DEFINE_string('model_dir', 'model/', 'Path to save model checkpoints')
 tf.app.flags.DEFINE_string('model_name', 'translate.ckpt', 'File name used for model checkpoints')
@@ -118,6 +118,9 @@ def train():
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement, 
         log_device_placement=FLAGS.log_device_placement, gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
 
+        # Create a log writer object
+        log_writer = tf.summary.FileWriter(FLAGS.model_dir, graph=sess.graph)
+
         # Create a new model or reload existing checkpoint
         model = create_model(sess, FLAGS)
 
@@ -142,8 +145,8 @@ def train():
                     continue
 
                 # Execute a single training step
-                step_loss = model.train(sess, encoder_inputs=source, encoder_inputs_length=source_len, 
-                                        decoder_inputs=target, decoder_inputs_length=target_len)
+                step_loss, summary = model.train(sess, encoder_inputs=source, encoder_inputs_length=source_len, 
+                                                 decoder_inputs=target, decoder_inputs_length=target_len)
 
                 loss += float(step_loss) / FLAGS.display_freq
                 words_seen += float(np.sum(source_len+target_len))
@@ -168,6 +171,9 @@ def train():
                     sents_seen = 0
                     start_time = time.time()
 
+                    # Record training summary for the current batch
+                    log_writer.add_summary(summary, model.global_step.eval())
+
                 # Execute a validation step
                 if valid_set and model.global_step.eval() % FLAGS.valid_freq == 0:
                     print 'Validation step'
@@ -178,8 +184,8 @@ def train():
                         source, source_len, target, target_len = prepare_train_batch(source_seq, target_seq)
 
                         # Compute validation loss: average per word cross entropy loss
-                        step_loss = model.eval(sess, encoder_inputs=source, encoder_inputs_length=source_len,
-                                               decoder_inputs=target, decoder_inputs_length=target_len)
+                        step_loss, summary = model.eval(sess, encoder_inputs=source, encoder_inputs_length=source_len,
+                                                        decoder_inputs=target, decoder_inputs_length=target_len)
                         batch_size = source.shape[0]
 
                         valid_loss += step_loss * batch_size
