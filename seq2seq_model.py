@@ -416,7 +416,7 @@ class Seq2SeqModel(object):
 
         # Update the model
         self.updates = self.opt.apply_gradients(
-            zip(clip_gradients, trainable_params, global_step=self.global_step))
+            zip(clip_gradients, trainable_params), global_step=self.global_step))
 
     def save(self, sess, path, var_list=None, global_step=None):
         # var_list = None returns the list of all saveable variables
