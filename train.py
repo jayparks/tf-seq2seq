@@ -117,12 +117,14 @@ def train():
     # Initiate TF session
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement, 
         log_device_placement=FLAGS.log_device_placement, gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
-
+        
+        # Create a new model or reload existing checkpoint
+        model = create_model(sess, FLAGS)
+        
         # Create a log writer object
         log_writer = tf.summary.FileWriter(FLAGS.model_dir, graph=sess.graph)
 
-        # Create a new model or reload existing checkpoint
-        model = create_model(sess, FLAGS)
+        
 
         step_time, loss = 0.0, 0.0
         words_seen, sents_seen = 0, 0
